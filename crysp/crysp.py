@@ -127,19 +127,18 @@ def plot_spectra(time, left, right, gain_left, gain_right, start_left, start_rig
         p_511_right[1] * 0.8,
         p_511_right[0] * 1,
         f"{p_511_right[2]/p_511_right[1]*100:.3g}\%\n{p_511_right[1]:.3g}",
-        c="k",
+        c="r",
     )
     ax.text(
         p_511_left[1] * 0.8,
         p_511_left[0] * 1.1,
         f"{p_511_left[2]/p_511_left[1]*100:.3g}\%\n{p_511_left[1]:.3g}",
-        c="r",
+        c="k",
     )
 
-    ax.legend(frameon=False, fontsize="large")
-    ax.set_xlabel("Charge [V$\cdot$s]", fontsize="xx-large")
-    ax.set_ylabel("N. events", fontsize="xx-large")
-    ax.tick_params(axis="both", which="major", labelsize="x-large")
+    ax.legend()
+    ax.set_xlabel("Charge [V$\cdot$s]")
+    ax.set_ylabel("N. events")
     fig.savefig("na22.png")
 
     average_left = np.average(
