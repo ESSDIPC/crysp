@@ -3,17 +3,175 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
 from scipy.special import erfc
+from tqdm import tqdm
 
 
-def read_single_crystal(filename):
+def read_single_crystal(filename, ticks_column=0):
     df = pd.read_csv(filename)
-    ticks = int(df.columns[0])
+    ticks = int(df.columns[ticks_column])
     time = df.index[:ticks]
     events = int(len(df) / ticks)
     ch1 = df.values[:, 0].reshape(events, ticks)
     ch1[ch1 == -99999999] = np.min(ch1[ch1 != -99999999])
 
     return time, ch1
+
+
+def time_resolution(
+    time,
+    left,
+    right,
+    left_energy,
+    right_energy,
+    left_threshold,
+    right_threshold,
+    sigma_left,
+    sigma_right,
+    signal_window,
+):
+    left_times = []
+    right_times = []
+    peak_events = (
+        (right_energy > 511 - 2.355 * sigma_right / 2)
+        & (right_energy < 511 + 2.355 * sigma_right / 2)
+        & (left_energy > 511 - 2.355 * sigma_left / 2)
+        & (left_energy < 511 + 2.355 * sigma_left / 2)
+    )
+    left_peak = left[peak_events]
+    right_peak = right[peak_events]
+    time_window = (time > signal_window[0]) & (time < signal_window[1])
+    timeline = time[time_window]
+    for ievt in tqdm(range(left_peak.shape[0])):
+        left_time_window = left_peak[ievt, time_window]
+        right_time_window = right_peak[ievt, time_window]
+        right_times.append(timeline[right_time_window > right_threshold][0])
+        left_times.append(timeline[left_time_window > left_threshold][0])
+
+    return np.array(left_times), np.array(right_times)
+
+
+def energy_spectra(
+    left_energy, right_energy, x_range=(100, 800), fit_position=450, text_left=False
+):
+    fig, ax = plt.subplots(
+        1, 2, figsize=(9, 4), constrained_layout=True, sharey=True, sharex=True
+    )
+
+    n_left, bins_left, _ = ax[0].hist(
+        left_energy,
+        bins=100,
+        range=x_range,
+        histtype="step",
+        color="k",
+    )
+    bin_centers_left = (bins_left[:-1] + bins_left[1:]) / 2
+    popt_left_energy, pcov_left_energy = curve_fit(
+        gauss,
+        bin_centers_left[bin_centers_left > fit_position],
+        n_left[bin_centers_left > fit_position],
+        p0=(max(n_left), 511, 100),
+    )
+    ax[0].plot(bin_centers_left, gauss(bin_centers_left, *popt_left_energy), c="k")
+    if text_left:
+        ax[0].text(
+            popt_left_energy[1] * 0.95,
+            popt_left_energy[0] * 0.8,
+            f"511 keV\n$\Delta E/E={2.355*popt_left_energy[2]/popt_left_energy[1]*100:.2f}$\%%",
+            horizontalalignment="right",
+        )
+    else:
+        ax[0].text(
+            popt_left_energy[1] * 1.16,
+            popt_left_energy[0] * 0.8,
+            f"511 keV\n$\Delta E/E={2.355*popt_left_energy[2]/popt_left_energy[1]*100:.2f}$\%%",
+        )
+    n_right, bins_right, _ = ax[1].hist(
+        right_energy,
+        bins=100,
+        range=x_range,
+        histtype="step",
+        color="k",
+    )
+    bin_centers_right = (bins_right[:-1] + bins_right[1:]) / 2
+    popt_right_energy, pcov_right_energy = curve_fit(
+        gauss,
+        bin_centers_right[bin_centers_right > fit_position],
+        n_right[bin_centers_right > fit_position],
+        p0=(max(n_right), 511, 100),
+    )
+    ax[1].plot(bin_centers_right, gauss(bin_centers_right, *popt_right_energy), c="k")
+    if text_left:
+        ax[1].text(
+            popt_right_energy[1] * 0.95,
+            popt_right_energy[0] * 0.8,
+            f"511 keV\n$\Delta E/E={2.355*popt_right_energy[2]/popt_right_energy[1]*100:.2f}$\%%",
+            horizontalalignment="right",
+        )
+    else:
+        ax[1].text(
+            popt_right_energy[1] * 1.16,
+            popt_right_energy[0] * 0.8,
+            f"511 keV\n$\Delta E/E={2.355*popt_right_energy[2]/popt_right_energy[1]*100:.2f}$\%%",
+        )
+    ax[0].set_title("Left crystal")
+    ax[1].set_title("Right crystal")
+    ax[0].set_xlabel("Energy [keV]")
+    ax[1].set_xlabel("Energy [keV]")
+    ax[0].set_ylabel(f"N. events / {bins_left[1]-bins_left[0]:.2g} keV")
+    ax[0].set_xlim(*x_range)
+    fig.suptitle(r"$^{22}$Na coincidence spectrum")
+
+    return (
+        fig,
+        ax,
+        popt_left_energy,
+        pcov_left_energy,
+        popt_right_energy,
+        pcov_right_energy,
+    )
+
+
+def charge_spectra(
+    integral_left, integral_right, left_range, right_range, fit_left, fit_right
+):
+    fig, ax = plt.subplots(1, 2, figsize=(9, 4), constrained_layout=True)
+    n_left, bins_left, _ = ax[0].hist(
+        integral_left,
+        bins=100,
+        range=left_range,
+        histtype="step",
+        color="k",
+    )
+    bin_centers_left = (bins_left[:-1] + bins_left[1:]) / 2
+    popt_left, pcov_left = curve_fit(
+        gauss,
+        bin_centers_left[bin_centers_left > fit_left],
+        n_left[bin_centers_left > fit_left],
+        p0=(max(n_left), fit_left * 1.05, fit_left / 10),
+    )
+    ax[0].plot(bin_centers_left, gauss(bin_centers_left, *popt_left), c="k")
+
+    n_right, bins_right, _ = ax[1].hist(
+        integral_right, bins=100, range=right_range, histtype="step", color="k"
+    )
+    bin_centers_right = (bins_right[:-1] + bins_right[1:]) / 2
+    popt_right, pcov_right = curve_fit(
+        gauss,
+        bin_centers_right[bin_centers_right > fit_right],
+        n_right[bin_centers_right > fit_right],
+        p0=(max(n_right), fit_right * 1.05, fit_right / 10),
+    )
+    ax[1].plot(bin_centers_right, gauss(bin_centers_right, *popt_right), c="k")
+
+    ax[0].set_title("Left crystal")
+    ax[1].set_title("Right crystal")
+    ax[0].set_xlabel("Charge [V$\cdot$s]")
+    ax[1].set_xlabel("Charge [V$\cdot$s]")
+    ax[0].set_ylabel(f"N. events / {bins_left[1]-bins_left[0]:.2e} [V$\cdot$s]")
+    ax[1].set_ylabel(f"N. events / {bins_right[1]-bins_right[0]:.2e} [V$\cdot$s]")
+    fig.suptitle(r"$^{22}$Na coincidence spectrum - charge")
+
+    return fig, ax, popt_left, pcov_left, popt_right, pcov_right
 
 
 def read_file(filename):
@@ -137,7 +295,7 @@ def plot_spectra(time, left, right, gain_left, gain_right, start_left, start_rig
     )
 
     ax.legend()
-    ax.set_xlabel("Charge [V$\cdot$s]")
+    ax.set_xlabel("Charge [p.e.]")
     ax.set_ylabel("N. events")
     fig.savefig("na22.png")
 

@@ -1,3 +1,5 @@
+#!/usr/bin/env bash
+
 FILES="$1/*.csv"
 READ_FIRST=0
 for f in $FILES
