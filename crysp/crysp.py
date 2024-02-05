@@ -9,9 +9,9 @@ from tqdm import tqdm
 def read_single_crystal(filename, ticks_column=0):
     df = pd.read_csv(filename)
     ticks = int(df.columns[ticks_column])
-    time = df.index[:ticks]
+    time = df[df.columns[0]][:ticks].values
     events = int(len(df) / ticks)
-    ch1 = df.values[:, 0].reshape(events, ticks)
+    ch1 = df.values[:, 1].reshape(events, ticks)
     ch1[ch1 == -99999999] = np.min(ch1[ch1 != -99999999])
 
     return time, ch1
@@ -132,12 +132,12 @@ def energy_spectra(
 
 
 def charge_spectra(
-    integral_left, integral_right, left_range, right_range, fit_left, fit_right
+    integral_left, integral_right, left_range, right_range, fit_left, fit_right, n_bins=50
 ):
-    fig, ax = plt.subplots(1, 2, figsize=(9, 4), constrained_layout=True)
+    fig, ax = plt.subplots(1, 2, figsize=(9, 4), constrained_layout=True, sharey=True)
     n_left, bins_left, _ = ax[0].hist(
         integral_left,
-        bins=100,
+        bins=n_bins,
         range=left_range,
         histtype="step",
         color="k",
@@ -149,10 +149,11 @@ def charge_spectra(
         n_left[bin_centers_left > fit_left],
         p0=(max(n_left), fit_left * 1.05, fit_left / 10),
     )
-    ax[0].plot(bin_centers_left, gauss(bin_centers_left, *popt_left), c="k")
+    xx = np.linspace(bin_centers_left[0], bin_centers_left[-1], 1000)
+    ax[0].plot(xx, gauss(xx, *popt_left), c="k")
 
     n_right, bins_right, _ = ax[1].hist(
-        integral_right, bins=100, range=right_range, histtype="step", color="k"
+        integral_right, bins=n_bins, range=right_range, histtype="step", color="k"
     )
     bin_centers_right = (bins_right[:-1] + bins_right[1:]) / 2
     popt_right, pcov_right = curve_fit(
@@ -161,14 +162,15 @@ def charge_spectra(
         n_right[bin_centers_right > fit_right],
         p0=(max(n_right), fit_right * 1.05, fit_right / 10),
     )
-    ax[1].plot(bin_centers_right, gauss(bin_centers_right, *popt_right), c="k")
+    xx = np.linspace(bin_centers_right[0], bin_centers_right[-1], 1000)
+    ax[1].plot(xx, gauss(xx, *popt_right), c="k")
 
     ax[0].set_title("Left crystal")
     ax[1].set_title("Right crystal")
     ax[0].set_xlabel("Charge [V$\cdot$s]")
     ax[1].set_xlabel("Charge [V$\cdot$s]")
     ax[0].set_ylabel(f"N. events / {bins_left[1]-bins_left[0]:.2e} [V$\cdot$s]")
-    ax[1].set_ylabel(f"N. events / {bins_right[1]-bins_right[0]:.2e} [V$\cdot$s]")
+    # ax[1].set_ylabel(f"N. events / {bins_right[1]-bins_right[0]:.2e} [V$\cdot$s]")
     fig.suptitle(r"$^{22}$Na coincidence spectrum - charge")
 
     return fig, ax, popt_left, pcov_left, popt_right, pcov_right
@@ -230,6 +232,11 @@ def two_exp_gauss(x, A, N, mu, l1, l2, sigma):
     return A * (
         N * exp_gauss_pdf(x, mu, l1, sigma) + (1 - N) * exp_gauss_pdf(x, mu, l2, sigma)
     )
+
+
+def two_gauss(x, N1, N2, mu1, mu2, sigma1, sigma2):
+    return N1 * gauss(x, N1, mu1, sigma1) + N2 * gauss(x, N2, mu2, sigma2)
+
 
 
 def three_exp_gauss(x, A, N1, N2, mu, l1, l2, l3, sigma):
